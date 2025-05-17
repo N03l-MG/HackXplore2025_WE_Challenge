@@ -24,8 +24,22 @@ public class Program
 	{
 		try
 		{
-			// 1. Read BOMs
-			var competitorComponents = ReadBOMFiles();
+			if (args.Length == 0)
+			{
+				Console.WriteLine("Please provide the path to the BOM file as an argument.");
+				Console.WriteLine("Usage: program.exe boms/bom.xlsx");
+				return;
+			}
+
+			string bomFile = args[0];
+			if (!File.Exists(bomFile))
+			{
+				Console.WriteLine($"File not found: {bomFile}");
+				return;
+			}
+
+			// 1. Read BOM
+			var competitorComponents = ReadBOMFiles(bomFile);
 
 			// 2. Enrich data using Python Google Search
 			var enrichedComponents = await EnrichComponentsWithGoogleSearch(competitorComponents);
@@ -42,14 +56,13 @@ public class Program
 		}
 	}
 
-	private static List<Component> ReadBOMFiles()
+	private static List<Component> ReadBOMFiles(string filePath)
 	{
 		var components = new List<Component>();
 
-		foreach (var file in Directory.GetFiles(BOMS_DIRECTORY, "*.xls*"))
+		using (var stream = File.Open(filePath, FileMode.Open, FileAccess.Read))
+		using (var reader = ExcelReaderFactory.CreateReader(stream))
 		{
-			using var stream = File.Open(file, FileMode.Open, FileAccess.Read);
-			using var reader = ExcelReaderFactory.CreateReader(stream);
 			var result = reader.AsDataSet();
 			foreach (DataTable table in result.Tables)
 			{
@@ -61,7 +74,6 @@ public class Program
 				}
 			}
 		}
-
 		return components;
 	}
 
@@ -339,14 +351,14 @@ public class Program
 
 	private static double ComparePhysicalDimensions(Component comp1, Component comp2)
 	{
-		var lengthScore = CompareValues(comp1.Length, comp2.Length, 0.2);
+		var lengthScore = CompareValues(comp1.length, comp2.length, 0.2);
 		var widthScore = CompareValues(
-			(comp1 as dynamic)?.Width ?? 0, 
-			(comp2 as dynamic)?.Width ?? 0, 
+			(comp1 as dynamic)?.width ?? 0, 
+			(comp2 as dynamic)?.width ?? 0, 
 			0.2);
 		var heightScore = CompareValues(
-			(comp1 as dynamic)?.Height ?? 0, 
-			(comp2 as dynamic)?.Height ?? 0, 
+			(comp1 as dynamic)?.height ?? 0, 
+			(comp2 as dynamic)?.height ?? 0, 
 			0.2);
 
 		return (lengthScore + widthScore + heightScore) / 3;

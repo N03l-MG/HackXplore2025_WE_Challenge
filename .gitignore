@@ -1,3 +1,5 @@
 bin/
 obj/
-HackXplore_AIXrefBOM/
+HackXplore_AIXrefBOM/.env
+*/*.pdf
+*/*.pptx
