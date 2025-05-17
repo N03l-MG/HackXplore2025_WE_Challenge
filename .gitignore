@@ -3,3 +3,4 @@ obj/
 HackXplore_AIXrefBOM/.env
 */*.pdf
 */*.pptx
+results.csv

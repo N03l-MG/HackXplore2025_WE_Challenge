@@ -20,6 +20,48 @@ public class Program
 		System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
 	}
 
+	private class WEComponent
+	{
+		// Common fields
+		public string? Order_Code { get; set; }
+		public string? Product_Unit { get; set; }
+		public string? Product_Group { get; set; }
+		public string? Product_Series { get; set; }
+		public string? Product_Family { get; set; }
+		public string? Mount { get; set; }
+		public string? Url { get; set; }
+		public double? Length { get; set; }
+		public double? Width { get; set; }
+		public double? Height { get; set; }
+
+		// Resistor fields
+		[JsonProperty("Resistance (Ohm)")]
+		public double? Resistance { get; set; }
+		
+		[JsonProperty("Rated_Power (W)")]
+		public double? Rated_Power { get; set; }
+		
+		[JsonProperty("Rated_Current (A)")]
+		public double? Rated_Current { get; set; }
+
+		// Inductor fields
+		[JsonProperty("Inductance (µH)")]
+		public double? Inductance { get; set; }
+		
+		[JsonProperty("DC_Resistance (Ohm)")]
+		public double? DC_Resistance { get; set; }
+		
+		[JsonProperty("Saturation_Current (A)")]
+		public double? Saturation_Current { get; set; }
+
+		// Capacitor fields
+		[JsonProperty("Capacitance (µF)")]
+		public double? Capacitance { get; set; }
+		
+		[JsonProperty("Rated_Voltage (V)")]
+		public double? Rated_Voltage { get; set; }
+	}
+
 	private static async Task Main(string[] args)
 	{
 		try
@@ -166,56 +208,6 @@ public class Program
 		return matches;
 	}
 
-	private static async Task<List<Component>> LoadWEComponents()
-	{
-		var components = new List<Component>();
-		
-		foreach (var file in Directory.GetFiles(WE_DATA_DIRECTORY, "*.json"))
-		{
-			try
-			{
-				var json = await File.ReadAllTextAsync(file);
-				var componentType = DetermineComponentTypeFromFilename(file);
-				var jsonComponents = JsonConvert.DeserializeObject<List<WEComponent>>(json);
-
-				if (jsonComponents == null) continue;
-
-				foreach (var weComp in jsonComponents)
-				{
-					var component = ConvertWEComponent(weComp, componentType);
-					if (component != null)
-						components.Add(component);
-				}
-			}
-			catch (Exception ex)
-			{
-				Console.WriteLine($"Error parsing {file}: {ex.Message}");
-			}
-		}
-
-		return components;
-	}
-
-	private class WEComponent
-	{
-		public string? Order_Code { get; set; }
-		public string? Product_Unit { get; set; }
-		public string? Product_Group { get; set; }
-		public string? Product_Series { get; set; }
-		public string? Product_Family { get; set; }
-		public double? Resistance { get; set; }
-		public double? Inductance { get; set; }
-		public double? Capacitance { get; set; }
-		public double? Rated_Power { get; set; }
-		public double? Rated_Current { get; set; }
-		public double? Rated_Voltage { get; set; }
-		public double? Length { get; set; }
-		public double? Width { get; set; }
-		public double? Height { get; set; }
-		public string? Mount { get; set; }
-		public string? Size_Code { get; set; }
-		public string? Url { get; set; }
-	}
 
 	private static string DetermineComponentTypeFromFilename(string filename)
 	{
@@ -225,66 +217,125 @@ public class Program
 		if (filename.Contains("capacitor")) return "capacitor";
 		return "unknown";
 	}
+	
+	private static async Task<List<Component>> LoadWEComponents()
+	{
+		var components = new List<Component>();
+		var jsonSettings = new JsonSerializerSettings
+		{
+			Error = (sender, args) =>
+			{
+				Console.WriteLine($"JSON Error: {args.ErrorContext.Error.Message}");
+				args.ErrorContext.Handled = true;
+			},
+			NullValueHandling = NullValueHandling.Ignore,
+			MissingMemberHandling = MissingMemberHandling.Ignore
+		};
+
+		foreach (var file in Directory.GetFiles(WE_DATA_DIRECTORY, "*.json"))
+		{
+			try
+			{
+				var json = await File.ReadAllTextAsync(file);
+				var componentType = DetermineComponentTypeFromFilename(file);
+
+				// Clean JSON before parsing
+				json = CleanInvalidJson(json);
+
+				var jsonComponents = JsonConvert.DeserializeObject<List<WEComponent>>(json, jsonSettings);
+
+				if (jsonComponents == null)
+				{
+					Console.WriteLine($"No components found in {file}");
+					continue;
+				}
+
+				foreach (var weComp in jsonComponents.Where(c => c != null))
+				{
+					try
+					{
+						var component = ConvertWEComponent(weComp, componentType);
+						if (component != null)
+						{
+							components.Add(component);
+						}
+					}
+					catch (Exception ex)
+					{
+						Console.WriteLine($"Error converting component {weComp.Order_Code}: {ex.Message}");
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"Error parsing {file}: {ex.Message}");
+			}
+		}
+	    return components;
+	}
+
+	private static string CleanInvalidJson(string json)
+	{
+		// Basic JSON cleaning
+		return json.Replace("\r", "")
+				.Replace("\n", "")
+				.Replace("\t", "")
+				.Replace("\\", "\\\\");
+	}
 
 	private static Component? ConvertWEComponent(WEComponent weComp, string type)
 	{
-		switch (type.ToLower())
+		return type.ToLower() switch
 		{
-			case "resistor":
-				return new Resistor
-				{
-					id = weComp.Order_Code!,
-					type = "resistor",
-					orderCode = weComp.Order_Code!,
-					manufacturer = "Würth Elektronik",
-					url = weComp.Url!,
-					resistance = weComp.Resistance ?? 0,
-					ratedPower = weComp.Rated_Power ?? 0,
-					ratedCurrent = weComp.Rated_Current ?? 0,
-					length = weComp.Length ?? 0,
-					width = weComp.Width ?? 0,
-					height = weComp.Height ?? 0,
-					mount = weComp.Mount!,
-					series = weComp.Product_Series!
-				};
+			"resistor" => new Resistor
+			{
+				id = weComp.Order_Code!,
+				type = "resistor",
+				orderCode = weComp.Order_Code!,
+				manufacturer = "Würth Elektronik",
+				url = weComp.Url!,
+				resistance = weComp.Resistance ?? 0,
+				ratedPower = weComp.Rated_Power ?? 0,
+				ratedCurrent = weComp.Rated_Current ?? 0,
+				length = weComp.Length ?? 0,
+				width = weComp.Width ?? 0,
+				height = weComp.Height ?? 0,
+				mount = weComp.Mount!,
+				series = weComp.Product_Series!
+			},
+			"inductor" => new Inductor
+			{
+				id = weComp.Order_Code!,
+				type = "inductor",
+				orderCode = weComp.Order_Code!,
+				manufacturer = "Würth Elektronik",
+				url = weComp.Url!,
+				inductance = weComp.Inductance ?? 0,
+				ratedCurrent = weComp.Rated_Current ?? 0,
+				length = weComp.Length ?? 0,
+				height = weComp.Height ?? 0,
+				diameter = weComp.Width ?? 0, // Using width as diameter
+				mount = weComp.Mount!,
+				series = weComp.Product_Series!
+			},
+			"capacitor" => new Capacitor
+			{
+				id = weComp.Order_Code!,
+				type = "capacitor",
+				orderCode = weComp.Order_Code!,
+				manufacturer = "Würth Elektronik",
+				url = weComp.Url!,
+				ratedVoltage = weComp.Rated_Voltage ?? 0,
+				capacitance = weComp.Capacitance ?? 0,
+				length = weComp.Length ?? 0,
+				pitch = weComp.Width ?? 0, // Using width as pitch
+				diameter = weComp.Height ?? 0, // Using height as diameter
+				mount = weComp.Mount!,
+				family = weComp.Product_Family!
+			},
+			_ => null,
+		};
 
-			case "inductor":
-				return new Inductor
-				{
-					id = weComp.Order_Code!,
-					type = "inductor", 
-					orderCode = weComp.Order_Code!,
-					manufacturer = "Würth Elektronik",
-					url = weComp.Url!,
-					inductance = weComp.Inductance ?? 0,
-					ratedCurrent = weComp.Rated_Current ?? 0,
-					length = weComp.Length ?? 0,
-					height = weComp.Height ?? 0,
-					diameter = weComp.Width ?? 0, // Using width as diameter
-					mount = weComp.Mount!,
-					series = weComp.Product_Series!
-				};
-
-			case "capacitor":
-				return new Capacitor
-				{
-					id = weComp.Order_Code!,
-					type = "capacitor",
-					orderCode = weComp.Order_Code!,
-					manufacturer = "Würth Elektronik", 
-					url = weComp.Url!,
-					ratedVoltage = weComp.Rated_Voltage ?? 0,
-					capacitance = weComp.Capacitance ?? 0,
-					length = weComp.Length ?? 0,
-					pitch = weComp.Width ?? 0, // Using width as pitch
-					diameter = weComp.Height ?? 0, // Using height as diameter
-					mount = weComp.Mount!,
-					family = weComp.Product_Family!
-				};
-
-			default:
-				return null;
-		}
 	}
 
 	private static Component? FindBestMatch(Component competitor, List<Component> weComponents)
